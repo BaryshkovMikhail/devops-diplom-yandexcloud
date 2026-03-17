@@ -1,0 +1,15 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+.terraform.lock.hcl
+
+# Секреты
+*.tfvars
+!*.tfvars.example
+bootstrap-outputs.json
+
+# Локальные файлы
+*.log
+.DS_Store

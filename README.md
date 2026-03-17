@@ -1,4 +1,4 @@
-# Дипломный практикум в Yandex.Cloud
+# Дипломный практикум в Yandex.Cloud - Барышков Михаил
   * [Цели:](#цели)
   * [Этапы выполнения:](#этапы-выполнения)
      * [Создание облачной инфраструктуры](#создание-облачной-инфраструктуры)
@@ -20,6 +20,48 @@
 4. Настроить и автоматизировать сборку тестового приложения с использованием Docker-контейнеров.
 5. Настроить CI для автоматической сборки и тестирования.
 6. Настроить CD для автоматического развёртывания приложения.
+
+
+### 🗂️ Структура проекта
+
+```text
+
+yandex-cloud-diploma/
+│
+├── README.md                          # Общая документация проекта
+├── .gitignore                         # Исключаем секреты и локальные файлы
+│
+├── 📁 bootstrap/                      # 🔄 Начальная настройка (запускается первым)
+│   │                                  # Создаёт: сервисный аккаунт + S3 bucket для backend
+│   ├── main.tf                        # Ресурсы: service account, bucket, права
+│   ├── variables.tf                   # Переменные (токены, ID облака)
+│   ├── outputs.tf                     # Вывод: access_key, secret_key, bucket_name
+│   ├── providers.tf                   # Провайдер Yandex (без backend)
+│   ├── terraform.tfvars.example       # Шаблон для переменных (копируется пользователем)
+│   └── .gitignore                     # Исключаем terraform.tfvars
+│
+├── 📁 infrastructure/                 # 🏗️ Основная инфраструктура (запускается вторым)
+│   │                                  # Создаёт: VPC, подсети, security groups
+│   ├── main.tf                        # Ресурсы: network, subnets, security groups
+│   ├── variables.tf                   # Переменные конфигурации
+│   ├── outputs.tf                     # Вывод: IDs созданных ресурсов
+│   ├── providers.tf                   # Провайдер + backend (S3 из bootstrap)
+│   ├── terraform.tfvars.example       # Шаблон переменных
+│   └── .gitignore                     # Исключаем секреты
+│
+├── 📁 docs/                           # 📄 Материалы для дипломной работы
+│   ├── screenshots/                   # Папка для скриншотов
+│   │   ├── 01_bootstrap_apply.png
+│   │   ├── 02_vpc_console.png
+│   │   ├── 03_terraform_state.png
+│   │   └── 04_service_account_roles.png
+│   └── explanations.md                # Текстовые пояснения для вставки в диплом
+│
+└── 📁 scripts/                        # 🔧 Вспомогательные скрипты (опционально)
+    ├── init-backend.sh                # Автоматизация инициализации backend
+    └── validate-config.sh             # Проверка конфигурации перед apply
+
+```
 
 ---
 ## Этапы выполнения:
@@ -49,6 +91,186 @@
 
 1. Terraform сконфигурирован и создание инфраструктуры посредством Terraform возможно без дополнительных ручных действий, стейт основной конфигурации сохраняется в бакете или Terraform Cloud
 2. Полученная конфигурация инфраструктуры является предварительной, поэтому в ходе дальнейшего выполнения задания возможны изменения.
+
+## Решение :
+
+### Раздел: Проектирование облачной инфраструктуры
+Для автоматизации развёртывания инфраструктуры в облаке Yandex.Cloud использовался инструмент Infrastructure as Code — Terraform. Архитектура конфигураций разделена на два логических этапа:
+
+1. **Bootstrap-этап**: создание сервисного аккаунта с минимально необходимыми правами (роль `editor`) и bucket в Object Storage для хранения state-файла. Такой подход соответствует принципу наименьших привилегий: сервисный аккаунт не имеет прав суперпользователя, что снижает риски при компрометации учетных данных.
+2. **Infrastructure-этап**: развёртывание сетевой инфраструктуры — VPC с подсетями в трёх зонах доступности (`ru-central1-a`, `ru-central1-b`, `ru-central1-d`) для обеспечения отказоустойчивости. Все подсети настроены с включённым NAT для обеспечения исходящего доступа к интернету, необходимого для загрузки контейнерных образов и обновлений.
+
+Для хранения состояния Terraform использовался remote backend на базе S3-совместимого хранилища Yandex Object Storage с включённым шифрованием AES256. Это позволяет обеспечить целостность state-файла и возможность командной работы с инфраструктурой.
+Все чувствительные данные (токены, ключи доступа) передаются через переменные окружения или защищённые файлы `terraform.tfvars`, исключённые из системы контроля версий через `.gitignore`. Это соответствует лучшим практикам безопасности при работе с облачными провайдерами.
+Особое внимание уделено оптимизации затрат: в конфигурацию заложена возможность использования прерываемых виртуальных машин (preemptible instances) для worker-узлов будущего Kubernetes-кластера, что позволяет сократить расходы на вычислительные ресурсы до 80% без потери функциональности в тестовом окружении.
+
+### Раздел: Реализация безопасного хранения состояния Terraform
+Для обеспечения целостности и конфиденциальности state-файла инфраструктуры был использован remote backend на базе Yandex Object Storage с обязательным шифрованием. Конфигурация основана на проверенных паттернах из предыдущих этапов работы:
+
+1. **KMS-шифрование:** Создан симметричный ключ `yandex_kms_symmetric_key` с алгоритмом AES-128 и периодом ротации 1 год. Ключ используется в блоке `server_side_encryption_configuration` ресурса бакета с параметром `sse_algorithm = "aws:kms"`, что является единственным поддерживаемым значением в провайдере Yandex Cloud.
+2. **Организация ресурсов:** Всем ресурсам явно указан `folder_id`, что обеспечивает корректный учёт затрат в рамках папки проекта и соответствие требованиям организационной структуры облака.
+3. **Минимальные привилегии:** Сервисный аккаунт `terraform-sa` имеет только роль `editor` на уровне папки, без прав администратора каталога, что снижает поверхность атаки при компрометации учетных данных.
+4. **Управление жизненным циклом:** На бакете настроена политика автоматического удаления старых версий объектов через 30 дней, что предотвращает неконтролируемый рост затрат на хранение.
+
+Предупреждение о депрекации атрибута `acl` принято осознанно: в учебном проекте приоритетом является работоспособность конфигурации, а миграция на `yandex_storage_bucket_grant` может быть выполнена на этапе промышленной эксплуатации.
+
+---
+### 📦 ЭТАП 1.1: Bootstrap — Сервисный аккаунт и S3 Backend
+
+### [bootstrap/providers.tf](bootstrap/providers.tf)
+### [bootstrap/variables.tf](bootstrap/variables.tf)
+### [bootstrap/main.tf](bootstrap/main.tf)
+### [bootstrap/outputs.tf](bootstrap/outputs.tf)
+
+### 🔄 Выполнение этапа Bootstrap
+
+### 📋 Пошаговая инструкция:
+
+```bash
+# 1. Перейдите в директорию bootstrap
+cd bootstrap
+
+# 2. Инициализация Terraform (state будет локальным)
+terraform init
+
+# 3. Проверка конфигурации
+terraform validate
+terraform fmt -check
+```
+
+![img1](bootstrap/img/img1.png)
+
+``` bash
+# 4. Просмотр плана изменений
+terraform plan -out=tfplan
+```
+
+![img2](bootstrap/img/img2.png)
+
+```bash
+# 5. Применение конфигурации
+terraform apply tfplan
+
+# 6. Сохраните выходные значения для следующего этапа
+terraform output -json > ../infrastructure/bootstrap-outputs.json
+```
+
+![img3](bootstrap/img/img3.png)
+
+### Консоль KMS → Созданный ключ шифрования
+
+![img4-1](bootstrap/img/img4-1.png)
+
+### Консоль KMS → Созданный сервисный аккаунт
+
+![img5](bootstrap/img/img5.png)
+
+### Консоль KMS → Созданный бакет
+
+![img4](bootstrap/img/img4.png)
+![img6](bootstrap/img/img6.png)
+![img7](bootstrap/img/img7.png)
+
+
+### 🏗️ ЭТАП 1.2: Infrastructure — VPC и сетевая инфраструктура
+
+Теперь создаём основную инфраструктуру, используя bucket из bootstrap как backend.
+
+### 🗂️ Структура папки infrastructure/
+
+```text
+infrastructure/
+├── main.tf           # VPC, подсети, security groups
+├── variables.tf      # Переменные конфигурации
+├── outputs.tf        # Выходные значения
+├── providers.tf      # Провайдер + backend конфигурация
+├── terraform.tfvars  # Шаблон переменных
+└── .gitignore        # Исключаем секреты
+```
+
+### [infrastructure/providers.tf](infrastructure/providers.tf)
+### [infrastructure/variables.tf](infrastructure/variables.tf)
+### [infrastructure/main.tf](infrastructure/main.tf)
+### [infrastructure/outputs.tf](infrastructure/outputs.tf)
+
+### Раздел: Результаты развёртывания сетевой инфраструктуры
+После успешной инициализации backend и валидации конфигурации была выполнена команда terraform apply, в результате которой в облаке Яндекс.Облако созданы следующие ресурсы:
+
+1. VPC Network diploma-dev-network с CIDR-блоком 10.0.0.0/16 — изолированная сетевая среда проекта.
+2. Три подсети в зонах доступности ru-central1-a, ru-central1-b, ru-central1-d с включённым NAT для обеспечения исходящего доступа к интернету. Такое распределение обеспечивает отказоустойчивость будущего Kubernetes-кластера: при недоступности одной зоны мастер-ноды и рабочие узлы продолжат работу в остальных зонах.
+3. Группа безопасности diploma-dev-k8s-nodes-sg с правилами межсетевого экрана, разрешающими:
+   -  Порт 22 (SSH) — для административного доступа к узлам;
+   - Порты 80/443 (HTTP/HTTPS) — для входящего трафика приложений;
+   - Диапазон 30000-32767 (NodePort) — для сервисов Kubernetes типа NodePort;
+   - Внутренний трафик в пределах CIDR сети — для коммуникации компонентов кластера.
+
+Состояние инфраструктуры (terraform state) автоматически сохраняется в защищённый bucket Object Storage с шифрованием через KMS, что обеспечивает целостность данных и возможность командной работы. Все чувствительные параметры передаются через CLI-аргументы и не хранятся в репозитории, что соответствует лучшим практикам безопасности.
+
+Вместо устаревшего параметра nat = true использована современная архитектура маршрутизации через yandex_vpc_gateway с типом shared_egress_gateway. Это соответствует рекомендациям Яндекс.Облако для организации исходящего доступа из приватных подсетей.
+
+
+### 🔄 Пошаговая инструкция запуска
+
+```bash
+# 1. Перейдите в директорию infrastructure
+cd ~/git/homework/devops-diplom-yandexcloud/infrastructure
+
+
+# 2. Инициализация с настройкой backend
+# Извлеките значения из bootstrap-outputs.json (только для локального использования!)
+export TF_BACKEND_ACCESS_KEY=$(jq -r '.backend_access_key.value' bootstrap-outputs.json)
+export TF_BACKEND_SECRET_KEY=$(jq -r '.backend_secret_key.value' bootstrap-outputs.json)
+export TF_BUCKET_NAME=$(jq -r '.bucket_name.value' bootstrap-outputs.json)
+
+# Проверьте, что переменные установлены:
+echo "Bucket: $TF_BUCKET_NAME"
+echo "Access Key: ${TF_BACKEND_ACCESS_KEY:0:10}..."  # Покажет только первые 10 символов
+
+terraform init \
+ -backend-config="bucket=${TF_BUCKET_NAME}" \
+ -backend-config="access_key=${TF_BACKEND_ACCESS_KEY}" \
+ -backend-config="secret_key=${TF_BACKEND_SECRET_KEY}"
+```
+
+![img0](infrastructure/img/img0.png)
+
+```bash
+# 5. Проверка конфигурации
+
+
+terraform validate
+```
+
+![img1](infrastructure/img/img1.png)
+
+```bash
+terraform plan -out=tfplan
+```
+
+![img2](infrastructure/img/img2.png)
+
+```bash
+# 6. Применение инфраструктуры
+
+terraform apply tfplan
+```
+
+![img3](infrastructure/img/img3.png)
+
+### Консоль → VPC → Сети → diploma-dev-network
+
+
+![img4](infrastructure/img/img4.png)
+
+### Консоль → VPC → Группы безопасности → diploma-dev-k8s-nodes-sg
+
+![img5](infrastructure/img/img5.png)
+![img6](infrastructure/img/img6.png)
+
+
+### Консоль → Object Storage → diploma-tfstate-bucket-unique → terraform/infrastructure.tfstate
+
+![img7](infrastructure/img/img7.png)
 
 ---
 ### Создание Kubernetes кластера

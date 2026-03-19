@@ -10,6 +10,10 @@
 .terraform/
 .terraform.lock.hcl
 !*.tfvars.example
+infrastructure/tfplan
+infrastructure/tfplan.*
+bootstrap/tfplan
+bootstrap/tfplan.*
 
 # ============================================================
 # OUTPUTS С СЕКРЕТАМИ

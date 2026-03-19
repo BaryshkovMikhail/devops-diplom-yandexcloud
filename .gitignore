@@ -1,29 +1,37 @@
-# Terraform
-.terraform/
+# ============================================================
+# TERRAFORM - Чувствительные файлы (В НАЧАЛЕ!)
+# ============================================================
+*.tfplan
+*.tfplan.json
 *.tfstate
+*.tfstate.backup
 *.tfstate.*
 *.tfvars
+.terraform/
+.terraform.lock.hcl
 !*.tfvars.example
 
-# Секреты и ключи
+# ============================================================
+# OUTPUTS С СЕКРЕТАМИ
+# ============================================================
+*-outputs.json
+bootstrap-outputs.json
+infra-outputs.json
+
+# ============================================================
+# СЕКРЕТЫ И КЛЮЧИ
+# ============================================================
 *.pem
 *.key
 *.secret
 credentials.json
+*.password
+*.env
 
-# Локальные конфиги
+# ============================================================
+# ЛОКАЛЬНЫЕ КОНФИГИ
+# ============================================================
 .kube/
 *.log
 .DS_Store
-# Terraform sensitive files
-**/*.tfplan
-**/*.tfplan.json
-**/*.tfstate
-**/*.tfstate.*
-**/*.tfvars
-!**/*.tfvars.example
-**/.terraform/
-**/.terraform.lock.hcl
-
-# Outputs with sensitive data
-*-outputs.json
+*~

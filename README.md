@@ -866,6 +866,22 @@ kubectl patch svc monitoring-kube-prometheus-prometheus -n monitoring -p '{"spec
 
 ## 🚀 ЭТАП 5: Terraform Pipeline через GitHub Actions
 
+- Шаг 5.1: Создайте директорию для GitHub Actions
+```bash
+# Создайте папку для рабочих процессов
+mkdir -p .github/workflows
+```
+### [terraform-plan.yml](/.github/workflows/terraform-plan.yml)
+### [terraform-apply.yml](/.github/workflows/terraform-apply.yml)
+
+- Шаг 5.5: Настройте Secrets в GitHub
+В репозитории на GitHub:
+
+   1. Откройте: Settings → Secrets and variables → Actions
+   2. Добавьте следующие Repository secrets:
+
+![img8](monitoring/img/img10.png)
+
 
 ### Установка и настройка CI/CD
 

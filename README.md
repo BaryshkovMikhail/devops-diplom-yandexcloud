@@ -700,6 +700,158 @@ scp ~/git/homework/devops-diplom-yandexcloud/kubernetes-kubeadm/k8s/deployment.y
 Способ выполнения:
 1. Воспользоваться пакетом [kube-prometheus](https://github.com/prometheus-operator/kube-prometheus), который уже включает в себя [Kubernetes оператор](https://operatorhub.io/) для [grafana](https://grafana.com/), [prometheus](https://prometheus.io/), [alertmanager](https://github.com/prometheus/alertmanager) и [node_exporter](https://github.com/prometheus/node_exporter). Альтернативный вариант - использовать набор helm чартов от [bitnami](https://github.com/bitnami/charts/tree/main/bitnami).
 
+## Структура файлов для этапа 4
+
+```text
+~/git/homework/devops-diplom-yandexcloud/monitoring/
+├── README.md                    # Описание этапа
+├── helm-values/
+│   ├── prometheus-values.yaml   # Настройки Prometheus
+│   ├── grafana-values.yaml      # Настройки Grafana
+│   ├── alertmanager-values.yaml # Настройки Alertmanager
+│   └── node-exporter-values.yaml # Настройки node-exporter
+├── manifests/
+│   ├── namespace.yaml           # Пространство имён monitoring
+│   └── ingress.yaml             # (опционально) доступ к Grafana извне
+└── scripts/
+    └── install-monitoring.sh    # Скрипт установки (опционально)
+```
+
+### 🔧 Шаг 1: Подготовка — установка Helm (если не установлен)
+
+```bash
+# Проверьте, установлен ли Helm
+helm version
+
+# Если нет — установите:
+curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+# Проверьте установку
+helm version
+# ✅ Ожидаемый вывод: version.BuildInfo{Version:"v3.x.x", ...}
+```
+
+![img1](monitoring/img/img1.png)
+
+### 🔧 Шаг 2: Создайте структуру папок и файлы
+
+```bash
+# Создайте папку monitoring в основном проекте
+mkdir -p ~/git/homework/devops-diplom-yandexcloud/monitoring/{helm-values,manifests,scripts}
+cd ~/git/homework/devops-diplom-yandexcloud/monitoring
+```
+
+### [namespace.yaml](/monitoring/manifests/namespace.yaml)
+### [prometheus-values.yaml](/monitoring/helm-values/prometheus-values.yaml)
+### [grafana-values.yaml](/monitoring/helm-values/grafana-values.yaml)
+### [alertmanager-values.yaml](/monitoring/helm-values/alertmanager-values.yaml)
+### [node-exporter-values.yaml](/monitoring/helm-values/node-exporter-values.yaml)
+
+### 🔧 Шаг 3: Добавьте Helm репозитории
+
+```bash
+# Добавьте репозиторий Bitnami
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+
+# Обновите индекс репозиториев
+helm repo update
+```
+![img1](monitoring/img/img2.png)
+
+### 🔧 Шаг 4: Примените namespace и установите компоненты
+- 4.1. Создайте namespace monitoring
+
+```bash
+# Скопировать файл
+scp ~/git/homework/devops-diplom-yandexcloud/monitoring/manifests/namespace.yaml \
+    yc-user@89.169.133.106:~/namespace.yaml
+
+# Подключитесь к мастер-ноде
+ssh yc-user@89.169.133.106
+
+# Примените namespace
+kubectl apply -f namespace.yaml
+```
+![img3](monitoring/img/img3.png)
+
+- 4.2. Установка мониторинга (kube-prometheus-stack)
+
+```bash
+
+# === НА МАСТЕР-НОДЕ (через SSH) ===
+
+# 1. Убедитесь, что Helm установлен
+helm version
+
+# 2. Добавьте репозиторий (если ещё не добавили)
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+
+# 3. Примените namespace (файл уже скопирован)
+kubectl apply -f ~/namespace.yaml
+
+# 4. Установите весь стек мониторинга ОДНОЙ КОМАНДОЙ:
+helm install monitoring prometheus-community/kube-prometheus-stack \
+  --namespace monitoring \
+  --create-namespace \
+  --set prometheus.prometheusSpec.retention=15d \
+  --set prometheus.prometheusSpec.resources.requests.memory=256Mi \
+  --set prometheus.prometheusSpec.resources.limits.memory=512Mi \
+  --set grafana.adminPassword=diploma2024 \
+  --set grafana.resources.requests.memory=128Mi \
+  --set grafana.resources.limits.memory=256Mi \
+  --set alertmanager.resources.requests.memory=64Mi \
+  --set nodeExporter.resources.requests.memory=32Mi \
+  --wait --timeout 15m
+
+# 5. Проверьте установку
+kubectl get pods -n monitoring -o wide
+
+helm list -n monitoring
+```
+![img4](monitoring/img/img4.png)
+![img5](monitoring/img/img5.png)
+
+```bash
+# Получите пароль для Grafana
+GRAFANA_PASSWORD=$(kubectl get secret -n monitoring monitoring-grafana -o jsonpath="{.data.admin-password}" | base64 --decode)
+echo "Grafana admin password: $GRAFANA_PASSWORD"
+```
+![img5](monitoring/img/img6.png)
+
+### Настройте доступ к Grafana
+
+```bash
+# На мастер-ноде измените тип сервиса Grafana на NodePort:
+kubectl patch svc monitoring-grafana -n monitoring -p '{"spec": {"type": "NodePort", "ports": [{"port": 80, "nodePort": 30001}]}}'
+
+# Проверьте:
+kubectl get svc -n monitoring | grep grafana
+# ✅ Ожидаемый вывод:
+# monitoring-grafana   NodePort   10.96.xxx.xxx   <none>   80:30001/TCP   15m
+
+# Откройте в браузере на локальной машине:
+# http://89.169.133.106:30001
+# Логин: admin
+# Пароль: $GRAFANA_PASSWORD
+```
+![img7](monitoring/img/img7.png)
+![img9](monitoring/img/img9.png)
+
+### Проверьте Prometheus UI
+
+```bash
+# Аналогично настройте доступ к Prometheus (NodePort):
+kubectl patch svc monitoring-kube-prometheus-prometheus -n monitoring -p '{"spec": {"type": "NodePort", "ports": [{"port": 9090, "nodePort": 30002}]}}'
+
+# Откройте в браузере:
+# http://89.169.133.106:30002
+
+# Перейдите в: Status → Targets
+
+```
+![img8](monitoring/img/img8.png)
+
 ### Деплой инфраструктуры в terraform pipeline
 
 1. Если на первом этапе вы не воспользовались [Terraform Cloud](https://app.terraform.io/), то задеплойте и настройте в кластере [atlantis](https://www.runatlantis.io/) для отслеживания изменений инфраструктуры. Альтернативный вариант 3 задания: вместо Terraform Cloud или atlantis настройте на автоматический запуск и применение конфигурации terraform из вашего git-репозитория в выбранной вами CI-CD системе при любом комите в main ветку. Предоставьте скриншоты работы пайплайна из CI/CD системы.
@@ -711,6 +863,10 @@ scp ~/git/homework/devops-diplom-yandexcloud/kubernetes-kubeadm/k8s/deployment.y
 4. Http доступ на 80 порту к тестовому приложению.
 5. Atlantis или terraform cloud или ci/cd-terraform
 ---
+
+## 🚀 ЭТАП 5: Terraform Pipeline через GitHub Actions
+
+
 ### Установка и настройка CI/CD
 
 Осталось настроить ci/cd систему для автоматической сборки docker image и деплоя приложения при изменении кода.

@@ -683,10 +683,11 @@ scp ~/git/homework/devops-diplom-yandexcloud/kubernetes-kubeadm/k8s/deployment.y
     yc-user@89.169.133.106:~/
 ```
 
+### Проверка работы нод и сервиса 
+
 ![img16](kubernetes-kubeadm/img/img16.png)
 ![img17](kubernetes-kubeadm/img/img17.png)
 
-### Проверка работы нод и сервиса
 
 ### Подготовка cистемы мониторинга и деплой приложения
 Уже должны быть готовы конфигурации для автоматического создания облачной инфраструктуры и поднятия Kubernetes кластера.  

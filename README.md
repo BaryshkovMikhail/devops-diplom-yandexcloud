@@ -882,6 +882,9 @@ mkdir -p .github/workflows
 
 ![img8](monitoring/img/img10.png)
 
+- Шаг 5.6 Пушим в репозиторий
+
+![img11](monitoring/img/img11.png)
 
 ### Установка и настройка CI/CD
 

@@ -598,10 +598,97 @@ kubectl version --output=yaml
 
 ---
 
+## Решение
 
+### 🗂️ Структура нового репозитория
+Создадим отдельный репозиторий для приложения (не в основном проекте):
+```test
+~/git/diploma-test-app/
+├── Dockerfile              # Инструкция сборки образа
+├── nginx.conf              # Конфигурация nginx
+├── index.html              # Статическая страница
+├── .gitignore              # Исключения для git
+├── README.md               # Описание приложения
+└── .github/workflows/
+    └── build.yml           # (опционально) CI для авто-сборки
+```
+
+## 📄 Шаг 1: Создайте репозиторий и файлы
+### 1.1. Создайте папку и инициализируйте git
+
+```bash
+# Создайте папку для приложения
+mkdir -p ~/git/diploma-test-app
+cd ~/git/diploma-test-app
+
+# Инициализируйте git
+git init
+
+# Создайте .gitignore
+```
+[.gitignore](https://github.com/BaryshkovMikhail/diploma-test-app/blob/main/.gitignore)
+
+### 1.2. Создайте index.html (статическая страница)
+
+[index.html](https://github.com/BaryshkovMikhail/diploma-test-app/blob/main/index.html)
+
+### 1.3. Создайте nginx.conf
+
+[nginx.conf](https://github.com/BaryshkovMikhail/diploma-test-app/blob/main/nginx.conf)
+
+### 1.4. Создайте Dockerfile
+
+[Dockerfile](https://github.com/BaryshkovMikhail/diploma-test-app/blob/main/Dockerfile)
+
+### 1.5. Создайте README.md
+
+[README.md](https://github.com/BaryshkovMikhail/diploma-test-app/blob/main/README.md)
+
+### 1.6 Созадение и запуск прилоложения
+
+![img12](kubernetes-kubeadm/img/img12.png)
+![img13](kubernetes-kubeadm/img/img13.png)
+![img14](kubernetes-kubeadm/img/img14.png)
+
+## Решение 1: Использовать публичный DockerHub
+```bash
+# На локальной машине
+cd ~/git/diploma-test-app
+
+# Ваш DockerHub username
+DOCKERHUB_USER="nastya2005"
+
+# Сформируйте имя образа для DockerHub
+IMAGE_NAME="${DOCKERHUB_USER}/diploma-test-app:latest"
+echo "Building for DockerHub: $IMAGE_NAME"
+
+# Соберите образ
+docker build -t $IMAGE_NAME .
+
+# Загрузите в DockerHub (нужно предварительно создать репозиторий на hub.docker.com)
+docker push $IMAGE_NAME
+```
+
+![img15](kubernetes-kubeadm/img/img15.png)
+
+## 🎯 После загрузки образа: Развёртывание в Kubernetes
+Следующий шаг — применить манифесты к кластеру:
+
+### Скопируйте манифесты на мастер-ноду
+
+```bash
+# На локальной машине скопируйте файлы на мастер
+scp ~/git/homework/devops-diplom-yandexcloud/kubernetes-kubeadm/k8s/deployment.yaml \
+    ~/git/homework/devops-diplom-yandexcloud/kubernetes-kubeadm/k8s/service.yaml \
+    yc-user@89.169.133.106:~/
+```
+
+![img16](kubernetes-kubeadm/img/img16.png)
+![img17](kubernetes-kubeadm/img/img17.png)
+
+### Проверка работы нод и сервиса
 
 ### Подготовка cистемы мониторинга и деплой приложения
-
 Уже должны быть готовы конфигурации для автоматического создания облачной инфраструктуры и поднятия Kubernetes кластера.  
 Теперь необходимо подготовить конфигурационные файлы для настройки нашего Kubernetes кластера.
 

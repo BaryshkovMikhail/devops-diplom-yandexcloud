@@ -21,45 +21,55 @@
 5. Настроить CI для автоматической сборки и тестирования.
 6. Настроить CD для автоматического развёртывания приложения.
 
+---
 
-### 🗂️ Структура проекта
+# ЭТАП 0: ПОДГОТОВКА ИНФРАСТРУКТУРЫ
+
+## 1.1. Архитектура инфраструктуры
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│                    Yandex Cloud                             │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │  VPC: diploma-dev-network                           │    │
+│  │  CIDR: 10.0.0.0/16                                  │    │
+│  │                                                     │    │
+│  │  ┌─────────────────────────────────────────────┐    │    │
+│  │  │  Subnet: diploma-dev-subnet-a               │    │    │
+│  │  │  Zone: ru-central1-a                        │    │    │
+│  │  │  CIDR: 10.0.0.0/24                          │    │    │
+│  │  └─────────────────────────────────────────────┘    │    │
+│  │                                                     │    │
+│  │  Security Group: diploma-dev-k8s-nodes-sg           │    │
+│  │  - Allow: 22, 6443, 80, 443, 30000-32767            │    │
+│  │                                                     │    │
+│  └─────────────────────────────────────────────────────┘    │
+│                                                             │
+│  S3 Bucket: diploma-tfstate-bucket                          │
+│  - Terraform state storage                                  │
+│  - KMS encryption enabled                                   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## 1.2. Структура проекта
 
 ```text
 
-yandex-cloud-diploma/
-│
-├── README.md                          # Общая документация проекта
-├── .gitignore                         # Исключаем секреты и локальные файлы
-│
-├── 📁 bootstrap/                      # 🔄 Начальная настройка (запускается первым)
-│   │                                  # Создаёт: сервисный аккаунт + S3 bucket для backend
-│   ├── main.tf                        # Ресурсы: service account, bucket, права
-│   ├── variables.tf                   # Переменные (токены, ID облака)
-│   ├── outputs.tf                     # Вывод: access_key, secret_key, bucket_name
-│   ├── providers.tf                   # Провайдер Yandex (без backend)
-│   ├── terraform.tfvars.example       # Шаблон для переменных (копируется пользователем)
-│   └── .gitignore                     # Исключаем terraform.tfvars
-│
-├── 📁 infrastructure/                 # 🏗️ Основная инфраструктура (запускается вторым)
-│   │                                  # Создаёт: VPC, подсети, security groups
-│   ├── main.tf                        # Ресурсы: network, subnets, security groups
-│   ├── variables.tf                   # Переменные конфигурации
-│   ├── outputs.tf                     # Вывод: IDs созданных ресурсов
-│   ├── providers.tf                   # Провайдер + backend (S3 из bootstrap)
-│   ├── terraform.tfvars.example       # Шаблон переменных
-│   └── .gitignore                     # Исключаем секреты
-│
-├── 📁 docs/                           # 📄 Материалы для дипломной работы
-│   ├── screenshots/                   # Папка для скриншотов
-│   │   ├── 01_bootstrap_apply.png
-│   │   ├── 02_vpc_console.png
-│   │   ├── 03_terraform_state.png
-│   │   └── 04_service_account_roles.png
-│   └── explanations.md                # Текстовые пояснения для вставки в диплом
-│
-└── 📁 scripts/                        # 🔧 Вспомогательные скрипты (опционально)
-    ├── init-backend.sh                # Автоматизация инициализации backend
-    └── validate-config.sh             # Проверка конфигурации перед apply
+~/git/homework/devops-diplom-yandexcloud/
+├── bootstrap/                    # Инициализация backend и сервисных аккаунтов
+│   ├── main.tf
+│   ├── variables.tf
+│   ├── outputs.tf
+│   └── providers.tf
+├── infrastructure/               # Сетевая инфраструктура
+│   ├── main.tf                   # VPC, подсети, security groups
+│   ├── variables.tf
+│   ├── outputs.tf
+│   └── providers.tf
+├── .github/workflows/            # GitHub Actions workflows
+│   ├── terraform-apply.yml
+│   └── terraform-plan.yml
+└── README.md
 
 ```
 
@@ -196,8 +206,8 @@ infrastructure/
 ### Раздел: Результаты развёртывания сетевой инфраструктуры
 После успешной инициализации backend и валидации конфигурации была выполнена команда terraform apply, в результате которой в облаке Яндекс.Облако созданы следующие ресурсы:
 
-1. VPC Network diploma-dev-network с CIDR-блоком 10.0.0.0/16 — изолированная сетевая среда проекта.
-2. Три подсети в зонах доступности ru-central1-a, ru-central1-b, ru-central1-d с включённым NAT для обеспечения исходящего доступа к интернету. Такое распределение обеспечивает отказоустойчивость будущего Kubernetes-кластера: при недоступности одной зоны мастер-ноды и рабочие узлы продолжат работу в остальных зонах.
+1. VPC Network diploma-dev-network с CIDR-блоком `10.0.0.0/16` — изолированная сетевая среда проекта.
+2. Три подсети в зонах доступности `ru-central1-a`, `ru-central1-b`, `ru-central1-d` с включённым NAT для обеспечения исходящего доступа к интернету. Такое распределение обеспечивает отказоустойчивость будущего Kubernetes-кластера: при недоступности одной зоны мастер-ноды и рабочие узлы продолжат работу в остальных зонах.
 3. Группа безопасности diploma-dev-k8s-nodes-sg с правилами межсетевого экрана, разрешающими:
    -  Порт 22 (SSH) — для административного доступа к узлам;
    - Порты 80/443 (HTTP/HTTPS) — для входящего трафика приложений;
@@ -272,8 +282,17 @@ terraform apply tfplan
 
 ![img7](infrastructure/img/img7.png)
 
+### 1.5. Результаты этапа
+
+- ✅ Создан S3 bucket для хранения Terraform state
+- ✅ Настроен сервисный аккаунт с правами editor
+- ✅ Создана VPC сеть с подсетью в зоне `ru-central1-a`, `ru-central1-b`, `ru-central1-d`
+- ✅ Настроена Security Group с необходимыми правилами
+- ✅ Настроен GitHub Actions pipeline для автоматического применения инфраструктуры  
+
+
 ---
-### Создание Kubernetes кластера
+## Создание Kubernetes кластера
 
 На этом этапе необходимо создать [Kubernetes](https://kubernetes.io/ru/docs/concepts/overview/what-is-kubernetes/) кластер на базе предварительно созданной инфраструктуры.   Требуется обеспечить доступ к ресурсам из Интернета.
 
@@ -294,6 +313,9 @@ terraform apply tfplan
 3. Команда `kubectl get pods --all-namespaces` отрабатывает без ошибок.
 
 ---
+
+# ЭТАП 2: СОЗДАНИЕ KUBERNETES КЛАСТЕРА
+
 
 ## Решение 
 
@@ -340,36 +362,57 @@ Kubernetes сервиса Яндекс.Облако. Данное решение
 ### Схема инфраструктуры
 
 ```text
-┌─────────────────────────────────────┐
-│  Yandex Cloud Folder: default       │
-├─────────────────────────────────────┤
-│  VPC: diploma-dev-network           │
-│  CIDR: 10.0.0.0/16                  │
-│  Subnet: ru-central1-a              │
-│  Security Group: k8s-nodes-sg       │
-├─────────────────────────────────────┤
-│  Kubernetes Cluster (kubeadm)       │
-│  ┌─────────────────────────┐        │
-│  │ Master: 10.0.0.19       │        │
-│  │ - etcd                  │        │
-│  │ - kube-apiserver        │        │
-│  │ - kube-controller-mgr   │        │
-│  │ - kube-scheduler        │        │
-│  └─────────────────────────┘        │
-│  ┌─────────────────────────┐        │
-│  │ Worker-1: 10.0.0.28     │        │
-│  │ - kubelet               │        │
-│  │ - kube-proxy            │        │
-│  │ - containerd            │        │
-│  └─────────────────────────┘        │
-│  ┌─────────────────────────┐        │
-│  │ Worker-2: 10.0.0.36     │        │
-│  │ - kubelet               │        │
-│  │ - kube-proxy            │        │
-│  │ - containerd            │        │
-│  └─────────────────────────┘        │
-│  CNI: Calico (10.244.0.0/16)        │
-└─────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│              Kubernetes Cluster (kubeadm)                   │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌──────────────────────────────────────────────────┐       │
+│  │  Master Node (diploma-k8s-master)                │       │
+│  │  IP: 10.0.0.19 / 89.169.133.106                  │       │
+│  │  Resources: 2 vCPU, 4 GB RAM                     │       │
+│  │  Components:                                     │       │
+│  │    - etcd                                        │       │
+│  │    - kube-apiserver                              │       │
+│  │    - kube-controller-manager                     │       │
+│  │    - kube-scheduler                              │       │
+│  └──────────────────────────────────────────────────┘       │
+│                                                             │
+│  ┌──────────────────────────────────────────────────┐       │
+│  │  Worker Node 1 (diploma-k8s-worker-1)            │       │
+│  │  IP: 10.0.0.28 / 46.21.246.4                     │       │
+│  │  Resources: 2 vCPU, 2 GB RAM (preemptible)       │       │
+│  │  Components:                                     │       │
+│  │    - kubelet                                     │       │
+│  │    - kube-proxy                                  │       │
+│  │    - containerd                                  │       │
+│  └──────────────────────────────────────────────────┘       │
+│                                                             │
+│  ┌──────────────────────────────────────────────────┐       │
+│  │  Worker Node 2 (diploma-k8s-worker-2)            │       │
+│  │  IP: 10.0.0.36 / 46.21.246.204                   │       │
+│  │  Resources: 2 vCPU, 2 GB RAM (preemptible)       │       │
+│  │  Components:                                     │       │
+│  │    - kubelet                                     │       │
+│  │    - kube-proxy                                  │       │
+│  │    - containerd                                  │       │
+│  └──────────────────────────────────────────────────┘       │
+│                                                             │
+│  CNI: Calico (10.244.0.0/16)                                │
+│  Service CIDR: 10.96.0.0/12                                 │
+└─────────────────────────────────────────────────────────────┘
+```
+### Структура файлов
+```text
+kubernetes-kubeadm/
+├── main.tf                       # Провижининг ВМ через Terraform
+├── variables.tf
+├── outputs.tf
+├── providers.tf
+├── ansible/
+│   ├── hosts.ini                 # Ansible inventory
+│   ├── install-node.sh           # Скрипт установки Kubernetes
+│   └── init-cluster.sh           # Скрипт инициализации кластера
+└── terraform.tfvars
 ```
 
 ### Примечание по архитектуре кластера
@@ -460,6 +503,13 @@ sudo kubeadm init \
 - Системные поды в пространстве имён kube-system в статусе Running
 - Сетевой плагин Calico обеспечивает маршрутизацию между нодами
 
+### 2.4. Результаты этапа
+- ✅ Создано 3 ВМ (1 master + 2 workers) через Terraform
+- ✅ Установлен Kubernetes 1.28 через kubeadm
+- ✅ Настроен containerd как CRI
+- ✅ Развёрнут Calico CNI для сетевой связности
+- ✅ Все ноды в статусе Ready
+- ✅ Использованы прерываемые ВМ для экономии (до 80% дешевле)  
 
 ---
 
@@ -598,19 +648,49 @@ kubectl version --output=yaml
 
 ---
 
+# ЭТАП 3: ТЕСТОВОЕ ПРИЛОЖЕНИЕ И РЕЕСТР
 ## Решение
+
+## 3.1. Архитектура приложения
+
+```text
+┌────────────────────────────────────────────────┐
+│         Diploma Test Application               │
+├────────────────────────────────────────────────┤
+│                                                │
+│  📦 Docker Image                               │
+│  Base: nginx:1.25-alpine                       │
+│  Size: ~28 MB                                  │
+│                                                │
+│  📄 Files:                                     │
+│    - Dockerfile                                │
+│    - nginx.conf (с health checks)              │
+│    - index.html (статическая страница)         │
+│                                                │
+│  🌐 Endpoints:                                 │
+│    - /           → Главная страница            │
+│    - /health     → Liveness probe              │
+│    - /ready      → Readiness probe             │
+│    - /api/hostname → Имя пода                  │
+│                                                │
+│  🗄️ Registry:                                  │
+│    DockerHub: nastya2005/diploma-test-app      │
+│                                                │
+└────────────────────────────────────────────────┘
+```
 
 ### 🗂️ Структура нового репозитория
 Создадим отдельный репозиторий для приложения (не в основном проекте):
 ```test
 ~/git/diploma-test-app/
-├── Dockerfile              # Инструкция сборки образа
+├── Dockerfile              # Инструкция сборки
 ├── nginx.conf              # Конфигурация nginx
 ├── index.html              # Статическая страница
-├── .gitignore              # Исключения для git
-├── README.md               # Описание приложения
-└── .github/workflows/
-    └── build.yml           # (опционально) CI для авто-сборки
+├── .dockerignore
+├── .gitignore
+├── .github/workflows/
+│   └── ci-cd.yml          # CI/CD pipeline
+└── README.md
 ```
 
 ## 📄 Шаг 1: Создайте репозиторий и файлы
@@ -688,6 +768,14 @@ scp ~/git/homework/devops-diplom-yandexcloud/kubernetes-kubeadm/k8s/deployment.y
 ![img16](kubernetes-kubeadm/img/img16.png)
 ![img17](kubernetes-kubeadm/img/img17.png)
 
+### Результаты этапа
+- ✅ Создан репозиторий с тестовым приложением
+- ✅ Подготовлен Dockerfile на базе nginx:alpine
+- ✅ Образ опубликован на DockerHub: nastya2005/diploma-test-app
+- ✅ Настроен CI/CD pipeline для автоматической сборки
+- ✅ При создании тега/релиза происходит автоматический деплой в Kubernetes  
+
+----
 
 ### Подготовка cистемы мониторинга и деплой приложения
 Уже должны быть готовы конфигурации для автоматического создания облачной инфраструктуры и поднятия Kubernetes кластера.  
@@ -699,6 +787,55 @@ scp ~/git/homework/devops-diplom-yandexcloud/kubernetes-kubeadm/k8s/deployment.y
 
 Способ выполнения:
 1. Воспользоваться пакетом [kube-prometheus](https://github.com/prometheus-operator/kube-prometheus), который уже включает в себя [Kubernetes оператор](https://operatorhub.io/) для [grafana](https://grafana.com/), [prometheus](https://prometheus.io/), [alertmanager](https://github.com/prometheus/alertmanager) и [node_exporter](https://github.com/prometheus/node_exporter). Альтернативный вариант - использовать набор helm чартов от [bitnami](https://github.com/bitnami/charts/tree/main/bitnami).
+
+
+# ЭТАП 4: СИСТЕМА МОНИТОРИНГА
+
+## 4.1. Архитектура мониторинга
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│              Monitoring Stack (Namespace: monitoring)       │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌──────────────────────────────────────────────────┐       │
+│  │  Prometheus Server                               │       │
+│  │  - Сбор метрик каждые 30s                        │       │
+│  │  - Хранение: 15 дней                             │       │
+│  │  - Порт: 9090                                    │       │
+│  │  - Resources: 256Mi-512Mi RAM                    │       │
+│  └──────────────────────────────────────────────────┘       │
+│                                                             │
+│  ┌──────────────────────────────────────────────────┐       │
+│  │  Grafana                                         │       │
+│  │  - Визуализация и дашборды                       │       │
+│  │  - Порт: 3000                                    │       │
+│  │  - Pre-installed dashboards:                     │       │
+│  │    • Kubernetes Cluster Monitoring               │       │
+│  │    • Kubernetes Node Monitoring                  │       │
+│  │    • Prometheus Overview                         │       │
+│  └──────────────────────────────────────────────────┘       │
+│                                                             │
+│  ┌──────────────────────────────────────────────────┐       │
+│  │  Alertmanager                                    │       │
+│  │  - Управление алертами                           │       │
+│  │  - Порт: 9093                                    │       │
+│  └──────────────────────────────────────────────────┘       │
+│                                                             │
+│  ┌──────────────────────────────────────────────────┐       │
+│  │  Node Exporter (DaemonSet)                       │       │
+│  │  - Запущен на всех 3 нодах                       │       │
+│  │  - Сбор метрик: CPU, Memory, Disk, Network       │       │
+│  │  - Порт: 9100                                    │       │
+│  └──────────────────────────────────────────────────┘       │
+│                                                             │
+│  ┌──────────────────────────────────────────────────┐       │
+│  │  kube-prometheus-stack (Helm Chart)              │       │
+│  │  Version: 82.13.0                                │       │
+│  │  App Version: 0.89.0                             │       │
+│  └──────────────────────────────────────────────────┘       │
+└─────────────────────────────────────────────────────────────┘
+```
 
 ## Структура файлов для этапа 4
 
@@ -712,9 +849,7 @@ scp ~/git/homework/devops-diplom-yandexcloud/kubernetes-kubeadm/k8s/deployment.y
 │   └── node-exporter-values.yaml # Настройки node-exporter
 ├── manifests/
 │   ├── namespace.yaml           # Пространство имён monitoring
-│   └── ingress.yaml             # (опционально) доступ к Grafana извне
-└── scripts/
-    └── install-monitoring.sh    # Скрипт установки (опционально)
+│   └── ingress.yaml             # (опционально) доступ к Grafana 
 ```
 
 ### 🔧 Шаг 1: Подготовка — установка Helm (если не установлен)
@@ -852,6 +987,15 @@ kubectl patch svc monitoring-kube-prometheus-prometheus -n monitoring -p '{"spec
 ```
 ![img8](monitoring/img/img8.png)
 
+###  Результаты этапа
+- ✅ Развёрнут полный стек мониторинга через Helm
+- ✅ Prometheus собирает метрики со всех нод и подов
+- ✅ Grafana имеет предконфигурированные дашборды
+- ✅ Node Exporter запущен на всех 3 нодах
+- ✅ Настроено хранение метрик на 15 дней
+- ✅ Обеспечен HTTP доступ ко всем интерфейсам  
+----
+
 ### Деплой инфраструктуры в terraform pipeline
 
 1. Если на первом этапе вы не воспользовались [Terraform Cloud](https://app.terraform.io/), то задеплойте и настройте в кластере [atlantis](https://www.runatlantis.io/) для отслеживания изменений инфраструктуры. Альтернативный вариант 3 задания: вместо Terraform Cloud или atlantis настройте на автоматический запуск и применение конфигурации terraform из вашего git-репозитория в выбранной вами CI-CD системе при любом комите в main ветку. Предоставьте скриншоты работы пайплайна из CI/CD системы.
@@ -864,9 +1008,49 @@ kubectl patch svc monitoring-kube-prometheus-prometheus -n monitoring -p '{"spec
 5. Atlantis или terraform cloud или ci/cd-terraform
 ---
 
-## 🚀 ЭТАП 5: Terraform Pipeline через GitHub Actions
+# ЭТАП 5: TERRAFORM PIPELINE
 
-- Шаг 5.1: Создайте директорию для GitHub Actions
+## 5.1. Архитектура CI/CD для инфраструктуры
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│              Terraform Pipeline (GitHub Actions)            │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  Workflow 1: terraform-plan.yml                             │
+│  ┌────────────────────────────────────────────────┐         │
+│  │  Trigger: Pull Request to main                 │         │
+│  │  Steps:                                        │         │
+│  │    1. Checkout code                            │         │
+│  │    2. Setup Terraform                          │         │
+│  │    3. Terraform Init                           │         │
+│  │    4. Terraform Validate                       │         │
+│  │    5. Terraform Plan                           │         │
+│  │    6. Comment PR with plan output              │         │
+│  └────────────────────────────────────────────────┘         │
+│                                                             │
+│  Workflow 2: terraform-apply.yml                            │
+│  ┌────────────────────────────────────────────────┐         │
+│  │  Trigger: Push to main                         │         │
+│  │  Steps:                                        │         │
+│  │    1. Checkout code                            │         │
+│  │    2. Setup Terraform                          │         │
+│  │    3. Terraform Init                           │         │
+│  │    4. Terraform Validate                       │         │
+│  │    5. Terraform Plan                           │         │
+│  │    6. Terraform Apply (auto-approve)           │         │
+│  │    7. Update outputs                           │         │
+│  └────────────────────────────────────────────────┘         │
+│                                                             │
+│  Secrets:                                                   │
+│    - YC_TOKEN: IAM токен Yandex Cloud                       │
+│    - TF_BUCKET_NAME: S3 bucket для state                    │
+│    - TF_ACCESS_KEY: Access key для S3                       │
+│    - TF_SECRET_KEY: Secret key для S3                       │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+### Шаг 5.2: Создайте директорию для GitHub Actions
 ```bash
 # Создайте папку для рабочих процессов
 mkdir -p .github/workflows
@@ -874,7 +1058,7 @@ mkdir -p .github/workflows
 ### [terraform-plan.yml](/.github/workflows/terraform-plan.yml)
 ### [terraform-apply.yml](/.github/workflows/terraform-apply.yml)
 
-- Шаг 5.5: Настройте Secrets в GitHub
+### Шаг 5.3: Настройте Secrets в GitHub
 В репозитории на GitHub:
 
    1. Откройте: Settings → Secrets and variables → Actions
@@ -882,9 +1066,16 @@ mkdir -p .github/workflows
 
 ![img8](monitoring/img/img10.png)
 
-- Шаг 5.6 Пушим в репозиторий
+### Шаг 5.4 Пушим в репозиторий
 
 ![img11](monitoring/img/img11.png)
+
+### 5.4. Результаты этапа
+- ✅ Настроен GitHub Actions для автоматизации Terraform
+- ✅ При создании PR выполняется terraform plan с комментарием
+- ✅ При merge в main автоматически применяется terraform apply
+- ✅ Все секреты хранятся в зашифрованном виде
+- ✅ Обеспечена полная трассируемость изменений инфраструктуры  
 
 ### Установка и настройка CI/CD
 
@@ -902,6 +1093,198 @@ mkdir -p .github/workflows
 1. Интерфейс ci/cd сервиса доступен по http.
 2. При любом коммите в репозиторие с тестовым приложением происходит сборка и отправка в регистр Docker образа.
 3. При создании тега (например, v1.0.0) происходит сборка и отправка с соответствующим label в регистри, а также деплой соответствующего Docker образа в кластер Kubernetes.
+
+
+# ЭТАП 6: CI/CD ПРИЛОЖЕНИЯ
+
+## 6.1. Архитектура пайплайна приложения
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│           Application CI/CD Pipeline (GitHub Actions)       │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  Event: Push to main                                        │
+│  ┌────────────────────────────────────────────────┐         │
+│  │  Job: Build and Push Image                     │         │
+│  │    1. Checkout code                            │         │
+│  │    2. Setup Docker Buildx                      │         │
+│  │    3. Login to DockerHub                       │         │
+│  │    4. Build Docker image                       │         │
+│  │    5. Push to DockerHub                        │         │
+│  │       - nastya2005/diploma-test-app:latest     │         │
+│  │       - nastya2005/diploma-test-app:<sha>      │         │
+│  └────────────────────────────────────────────────┘         │
+│                                                             │
+│  Event: Release Published (Tag v*)                          │
+│  ┌────────────────────────────────────────────────┐         │
+│  │  Job: Build and Push Image (same as above)     │         │
+│  │    + Tag: nastya2005/diploma-test-app:v1.0.0   │         │
+│  └────────────────────────────────────────────────┘         │
+│           │                                                 │
+│           ↓                                                 │
+│  ┌────────────────────────────────────────────────┐         │
+│  │  Job: Deploy to Kubernetes                     │         │
+│  │    1. Checkout code                            │         │
+│  │    2. Setup kubectl                            │         │
+│  │    3. Configure kubeconfig                     │         │
+│  │    4. kubectl set image deployment             │         │
+│  │    5. kubectl rollout status (wait)            │         │
+│  │    6. Verify deployment                        │         │
+│  └────────────────────────────────────────────────┘         │
+│                                                             │
+│  Secrets:                                                   │
+│    - DOCKERHUB_USERNAME: nastya2005                         │
+│    - DOCKERHUB_TOKEN: dckr_pat_xxxxx                        │
+│    - KUBE_CONFIG: base64-encoded kubeconfig                 │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Шаг 1: Подготовьте репозиторий приложения
+```bash
+# Перейдите в репозиторий приложения
+cd ~/git/diploma-test-app
+
+# Проверьте текущее состояние
+git status
+git branch
+
+# Убедитесь, что в main
+git checkout main
+```
+### Шаг 2: Создайте директорию для GitHub Actions
+```bash
+# Создайте папку для workflow файлов
+mkdir -p .github/workflows
+```
+### Шаг 3: Создайте workflow файл ci-cd.yml
+
+### [ci-cd.yml](https://github.com/BaryshkovMikhail/diploma-test-app/.github/workflows/ci-cd.yml)
+
+### Шаг 4: Настройте Secrets в репозитории приложения
+
+4.1. Получите DockerHub Token
+
+    Откройте: https://hub.docker.com/settings/security
+    Нажмите New Access Token
+    Введите название (например, github-actions)
+    Скопируйте токен (начинается с dckr_pat_...)
+
+4.2. Получите KUBE_CONFIG
+
+```bash
+# На мастер-ноде Kubernetes выполните:
+ssh yc-user@89.169.133.106
+
+# Закодируйте kubeconfig в base64
+cat ~/.kube/config | base64 -w0
+
+# Скопируйте вывод (длинная строка)
+```
+
+4.3. Добавьте секреты в GitHub
+```bash
+1. Откройте репозиторий: https://github.com/BaryshkovMikhail/diploma-test-app
+2. Перейдите: Settings → Secrets and variables → Actions
+3. Нажмите New repository secret
+    Добавьте три секрета:
+```
+![img12](monitoring/img/img12.png)
+
+### Шаг 5: Создайте релиз для деплоя
+```bash
+cd ~/git/diploma-test-app
+
+# Создайте тег
+git tag v1.0.0
+
+# Запушите тег (это запустит деплой!)
+git push origin v1.0.0
+
+```
+![img13](monitoring/img/img13.png)
+
+### Результаты этапа
+- ✅ Настроен полный CI/CD pipeline для приложения
+- ✅ При коммите в main автоматически собирается образ
+- ✅ При создании тега/релиза происходит деплой в Kubernetes
+- ✅ Используется rolling update для zero-downtime деплоя
+- ✅ Все секреты безопасно хранятся в GitHub Secrets
+- Обеспечена полная автоматизация от кода до production  
+
+# ЗАКЛЮЧЕНИЕ
+## Итоги проекта
+В ходе выполнения дипломного проекта успешно решены следующие задачи:
+
+1. ✅ Инфраструктура как код
+    Вся инфраструктура Yandex Cloud (сети, ВМ, сервисные аккаунты, S3 bucket) описана в Terraform и управляется через Git.
+2. ✅ Kubernetes кластер
+    Развёрнут самоуправляемый Kubernetes кластер через kubeadm с 3 нодами (1 master + 2 workers) с использованием containerd и Calico CNI.
+3. ✅ Тестовое приложение
+    Создано nginx-приложение с health checks, опубликован Docker-образ на DockerHub.
+4. ✅ Система мониторинга
+    Развёрнут полный стек мониторинга (Prometheus + Grafana + Alertmanager + Node Exporter) через Helm chart kube-prometheus-stack.
+5. ✅ CI/CD для инфраструктуры
+    Настроены GitHub Actions workflows для автоматического применения Terraform конфигурации при изменениях в main ветке.
+6. ✅ CI/CD для приложения
+    Настроена автоматическая сборка Docker-образов и деплой в Kubernetes при создании релизов
+
+##
+Основная инфраструктура
+```text
+devops-diplom-yandexcloud/
+├── bootstrap/
+│   ├── main.tf
+│   ├── variables.tf
+│   ├── outputs.tf
+│   └── providers.tf
+├── infrastructure/
+│   ├── main.tf
+│   ├── variables.tf
+│   ├── outputs.tf
+│   └── providers.tf
+├── kubernetes-kubeadm/
+│   ├── main.tf
+│   ├── variables.tf
+│   ├── outputs.tf
+│   ├── providers.tf
+│   ├── terraform.tfvars
+│   └── ansible/
+│       ├── hosts.ini
+│       ├── install-node.sh
+│       └── init-cluster.sh
+├── registry/
+│   ├── main.tf
+│   ├── variables.tf
+│   ├── outputs.tf
+│   └── providers.tf
+├── monitoring/
+│   ├── manifests/
+│   │   └── namespace.yaml
+│   └── helm-values/
+│       ├── prometheus-values.yaml
+│       ├── grafana-values.yaml
+│       ├── alertmanager-values.yaml
+│       └── node-exporter-values.yaml
+├── .github/workflows/
+│   ├── terraform-apply.yml
+│   └── terraform-plan.yml
+└── README.md
+```
+
+## Тестовое приложение
+```text
+diploma-test-app/
+├── Dockerfile
+├── nginx.conf
+├── index.html
+├── .dockerignore
+├── .gitignore
+├── README.md
+└── .github/workflows/
+    └── ci-cd.yml
+```
 
 ---
 ## Что необходимо для сдачи задания?
